@@ -40,6 +40,36 @@ export const wrapRootElement = ({ element }) => (
   <TwilioVideoProvider>{element}</TwilioVideoProvider>
 )
 
+const handleRemoteParticipant = container => participant => {
+  const id = participant.sid
+
+  const addTrack = track => {
+    const container = document.getElementById(id)
+    const media = track.attach()
+
+    container.appendChild(media)
+  }
+
+  const el = document.createElement("div")
+  el.id = id
+  el.className = "remote-participant"
+
+  const name = document.createElement("h4")
+  name.innerText = participant.identity
+  el.appendChild(name)
+
+  container.appendChild(el)
+
+  participant.tracks.forEach(publication => {
+    if (publication.isSubscribed) {
+      addTrack(publication.track)
+    }
+  })
+
+  // If new tracks get added later, add those, too.
+  participant.on("trackSubscribed", addTrack)
+}
+
 const useTwilioVideo = () => {
   const [state, dispatch] = useContext(TwilioVideoContext)
   const videoRef = useRef()
@@ -74,6 +104,13 @@ const useTwilioVideo = () => {
 
       videoRef.current.appendChild(localEl)
     }
+
+    const handleParticipant = participant => {
+      handleRemoteParticipant(videoRef.current, participant)
+    }
+
+    room.participants.forEach(handleParticipant)
+    room.on("participantConnected", handleParticipant)
 
     dispatch({ type: "set-active-room", room })
   }
