@@ -1,47 +1,45 @@
 import React, { useState, useEffect } from "react"
-import { navigate } from "gatsby"
 import useTwilioVideo from "../hooks/use-twilio-video"
+import { navigate } from "gatsby"
 
 const Join = ({ location }) => {
-  const defaultRoom =
-    (location && location.state && location.state.roomName) || ""
-  const { state, getRoomToken } = useTwilioVideo()
+  const defaultRoom = (location && location.state && location.state.room) || ""
+  const { getParticipantToken, room: roomName, token } = useTwilioVideo()
   const [identity, setIdentity] = useState("")
-  const [roomName, setRoomName] = useState(defaultRoom)
+  const [room, setRoom] = useState(defaultRoom)
 
   useEffect(() => {
-    if (state.token && state.roomName) {
-      navigate(`/room/${state.roomName}`)
+    if (token && roomName) {
+      navigate(`/room/${roomName}`)
     }
-  }, [state])
+  }, [token, roomName])
 
-  const handleSubmit = event => {
+  const handleSubmit = async event => {
     event.preventDefault()
 
-    getRoomToken({ identity, roomName })
+    getParticipantToken({ identity, room })
   }
 
   return (
     <>
-      <h1>Start or Join a Video Call</h1>
-      <pre>{JSON.stringify(state, null, 2)}</pre>
-      <form className="start-form" onSubmit={handleSubmit}>
+      <h1>Start or Join a Video Chat</h1>
+      <form onSubmit={handleSubmit} className="start-form">
         <label htmlFor="identity">
           Display name:
           <input
             type="text"
             id="identity"
             value={identity}
-            onChange={event => setIdentity(event.target.value)}
+            onChange={e => setIdentity(e.target.value)}
           />
         </label>
-        <label htmlFor="roomName">
+        <label htmlFor="room">
           Which room do you want to join?
           <input
             type="text"
-            id="roomName"
-            value={roomName}
-            onChange={event => setRoomName(event.target.value)}
+            id="room"
+            value={room}
+            onChange={e => setRoom(e.target.value)}
           />
         </label>
         <button type="submit">Join Video Chat</button>

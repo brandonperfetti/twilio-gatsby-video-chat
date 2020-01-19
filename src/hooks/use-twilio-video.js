@@ -1,39 +1,44 @@
 import React, { createContext, useContext, useReducer, useRef } from "react"
 import axios from "axios"
-import { connect } from "twilio-video"
+import { connect, createLocalVideoTrack } from "twilio-video"
 
-const TWILIO_TOKEN_URL = "https://bisque-peacock-5978.twil.io/create-room-token"
-
-const DEFAULT_STATE = {
+const initialContext = {
   identity: false,
-  roomName: false,
-  token: false,
   room: false,
+  token: false,
+  activeRoom: false,
 }
 
-const reducer = (state, action) => {
+const reducer = (store, action) => {
   switch (action.type) {
     case "join":
       return {
-        ...state,
+        ...store,
         token: action.token,
+        room: action.room,
         identity: action.identity,
-        roomName: action.roomName,
       }
 
     case "set-active-room":
-      return { ...state, room: action.room }
+      return {
+        ...store,
+        activeRoom: action.activeRoom,
+      }
 
     case "disconnect":
-      state.room && state.room.disconnect()
-      return DEFAULT_STATE
+      store.activeRoom && store.activeRoom.disconnect()
+      return initialContext
+
+    default:
+      console.error(`Unknown action type: ${action.type}`)
+      return store
   }
 }
 
-const TwilioVideoContext = createContext()
+export const TwilioVideoContext = createContext()
 
-const TwilioVideoProvider = ({ children }) => (
-  <TwilioVideoContext.Provider value={useReducer(reducer, DEFAULT_STATE)}>
+export const TwilioVideoProvider = ({ children }) => (
+  <TwilioVideoContext.Provider value={useReducer(reducer, initialContext)}>
     {children}
   </TwilioVideoContext.Provider>
 )
@@ -47,6 +52,8 @@ const handleRemoteParticipant = container => participant => {
 
   const addTrack = track => {
     const container = document.getElementById(id)
+
+    // Create an HTML element to show the track (e.g. <audio> or <video>).
     const media = track.attach()
 
     container.appendChild(media)
@@ -60,8 +67,10 @@ const handleRemoteParticipant = container => participant => {
   name.innerText = participant.identity
   el.appendChild(name)
 
+  // Attach the new element to the DOM.
   container.appendChild(el)
 
+  // Attach existing participant audio and video tracks to the DOM.
   participant.tracks.forEach(publication => {
     if (publication.isSubscribed) {
       addTrack(publication.track)
@@ -70,34 +79,39 @@ const handleRemoteParticipant = container => participant => {
 
   // If new tracks get added later, add those, too.
   participant.on("trackSubscribed", addTrack)
-  participant.com("trackUnsubscribed", track => {
-    track.detatch().forEach(el => el.remove())
 
+  // When tracks are no longer available, remove the elements displaying them.
+  participant.on("trackUnsubscribed", track => {
+    // Get a list of elements from detach and remove them from the DOM.
+    track.detach().forEach(el => el.remove())
     const container = document.getElementById(id)
     if (container) container.remove()
   })
 }
 
 const useTwilioVideo = () => {
-  const [state, dispatch] = useContext(TwilioVideoContext)
+  const [store, dispatch] = useContext(TwilioVideoContext)
   const videoRef = useRef()
+  const { room, token, activeRoom } = store
 
-  const getRoomToken = async ({ identity, roomName }) => {
-    const result = await axios.post(TWILIO_TOKEN_URL, {
-      identity,
-      room: roomName,
+  const getParticipantToken = async ({ identity, room }) => {
+    const result = await axios({
+      method: "POST",
+      url: "https://jasmine-greyhound-8600.twil.io/create-room-token",
+      data: { identity, room },
     })
 
-    dispatch({ type: "join", token: result.data, identity, roomName })
+    dispatch({ type: "join", token: result.data, identity, room })
   }
 
   const connectToRoom = async () => {
-    if (!state.token) {
+    if (!token) {
       return
     }
 
-    const room = await connect(state.token, {
-      name: state.roomName,
+    // Connect to the appropriate Twilio video chat room.
+    const activeRoom = await connect(token, {
+      name: room,
       audio: true,
       video: { width: 640 },
       logLevel: "info",
@@ -105,28 +119,43 @@ const useTwilioVideo = () => {
       console.error(`Unable to join the room: ${error.message}`)
     })
 
-    const localTrack = [...room.localParticipant.videoTracks.values()][0].track
+    // Add your own video and audio tracks so you can see yourself.
+    const localTrack = await createLocalVideoTrack().catch(error => {
+      console.error(`Unable to create local tracks: ${error.message}`)
+    })
 
+    // Attach the local video if it’s not already visible.
     if (!videoRef.current.hasChildNodes()) {
       const localEl = localTrack.attach()
+      localEl.className = "local-video"
 
       videoRef.current.appendChild(localEl)
     }
 
-    const handleParticipant = participant => {
-      handleRemoteParticipant(videoRef.current, participant)
-    }
+    // Currying! Delicious! 🍛
+    const handleParticipant = handleRemoteParticipant(videoRef.current)
 
-    room.participants.forEach(handleParticipant)
-    room.on("participantConnected", handleParticipant)
+    // Handle any participants who are *already* connected to this room.
+    activeRoom.participants.forEach(handleParticipant)
 
-    dispatch({ type: "set-active-room", room })
+    // Handle participants who join *after* you’ve connected to the room.
+    activeRoom.on("participantConnected", handleParticipant)
+
+    dispatch({ type: "set-active-room", activeRoom })
   }
 
   const startVideo = () => connectToRoom()
   const leaveRoom = () => dispatch({ type: "disconnect" })
 
-  return { state, getRoomToken, startVideo, leaveRoom, videoRef }
+  return {
+    getParticipantToken,
+    startVideo,
+    leaveRoom,
+    activeRoom,
+    room,
+    token,
+    videoRef,
+  }
 }
 
 export default useTwilioVideo
