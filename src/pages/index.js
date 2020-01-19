@@ -1,8 +1,9 @@
-import React from "react";
-import Layout from '../components/layout';
+import React from "react"
+import Layout from "../components/layout"
+import Join from "../components/join"
 
 export default () => (
   <Layout>
-    <h1>ToDO: Create App</h1>
+    <Join />
   </Layout>
 )
